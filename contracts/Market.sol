@@ -1,30 +1,73 @@
 // SPDX-License-Identifier: MIT
+
+/**
+ *
+ *                  @@@@@@@@@@@@@@@@@*.         #@@@@#-         %@@%.             @@@%      
+ *                  @@@@=---------=@@@@.      .%@@+@@@@*        %@@@:             @@@@.     
+ *                  @@@@=---------=@@@@.     -@@%: .%@@@%.      %@@@:             @@@@.     
+ *                  @@@@%%%%%%%%%%@@@@%:    +@@#     #@@@@:     %@@@:             @@@@.     
+ *                  @@@@.          -@@@%   #@@+       +@@@@=    %@@@:             @@@@.     
+ *                  @@@@+++++++++++%@@@+ .%@@-    =****%@@@@*   %@@@#**********=  @@@@.     
+ *                  %%%%%%%%%%%%%%%%#+: :#%#:    +%%%%%%%%%%%*  *%%%%%%%%%%%%%#:  =#%%.     
+ *
+ *          ==================:  ====:  :============:    .===  ===-    ======:          .==
+ *          *@@@@@@@@@@@@@@@@@@= -@@@@*  =@@@@@@@@@@+    -@@%:  %@@@:  .@@@@@@@%-        %@@
+ *                  @@@@.         .%@@@%. :@@@@*        +@@#    %@@@:  .@@%:#@@@@%-      %@@
+ *                  @@@@.           *@@@@- .%@@@%.     #@@+     %@@@:  .@@%  :#@@@@%-    %@@
+ *                  @@@@.            =@@@@+  *@@@@-  .%@@-      %@@@:  .@@%    :#@@@@#:  %@@
+ *                  @@@@.             -@@@@*  =@@@@+-@@%:       %@@@:  .@@%      :#@@@@#:%@@
+ *                  @@@@.              .%@@@%. -@@@@@@#         #@@@:   @@%        :#@@@@@@@
+ *
+ */
+
 pragma solidity ^0.8.15;
 
-import "@openzeppelin/contracts/utils/Counters.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
+import '@openzeppelin/contracts/utils/Counters.sol';
+import '@openzeppelin/contracts/access/AccessControl.sol';
+import '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
+import '@openzeppelin/contracts/token/ERC20/ERC20.sol';
+import '@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol';
 
-import "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
-import "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
+import './tokens/Collection1155.sol';
 
-abstract contract Collection is IERC1155 {
-    function authorOf (uint id) public virtual view returns (address);
-}
+/// @title BaliTwin Market.
+/// @author BaliTwin Developers.
+/// @notice Contract for list and sale ERC1155 tokens.
 
+/// @custom:version 0.1.0
 /// @custom:security-contact security@balitwin.com
-contract BaliTwinMarket is ERC721Holder, ERC1155Holder, AccessControl {
+
+contract BaliTwinMarket is ERC1155Holder, AccessControl {
     using Counters for Counters.Counter;
+    using EnumerableSet for EnumerableSet.AddressSet;
 
-    bytes32 public constant VERIFIED_COLLECTION = keccak256("VERIFIED_COLLECTION");
+    bytes32 public constant VERIFIED_COLLECTION = keccak256('VERIFIED_COLLECTION');
+    
+    /**
+     * @dev Percentage value. 0% - 99%
+     */
 
-    uint constant public minPrice = 1 * 10 ** 6;
+    uint public listingFee = 0;
+
+    /**
+     * @dev Minimal price should be depended on Payment currency decimals.
+     */
+    
+    uint public minPrice = 1 wei;
+
+    /**
+     * @dev Address of ERC20 contract.
+     */
+
     address public paymentCurrency;
 
+    /**
+     * @dev Provides as bytes on token transfer.
+     */
+
     struct Invoice { uint price; }
+    
     struct Item {
         uint id;
         address collection;
@@ -34,27 +77,47 @@ contract BaliTwinMarket is ERC721Holder, ERC1155Holder, AccessControl {
         address seller;
     }
 
-    event List (uint id);
+    event Listed (uint id);
+    event Unlisted (uint id);
+    event Purchased (uint id);
 
+    event MinPriceChanged (uint value);
+    event ListingFeeChanged (uint value);
+    event PaymentCurrencyChanged (address value);
+
+    modifier onlySeller (uint id) {
+        require(_items[id].seller == msg.sender, 'You cannot unlist item, because you are not seller');
+        _;
+    }
+    
     Counters.Counter private _itemIdCounter;
     mapping (uint => Item) private _items;
 
-    Counters.Counter private _authorIdCounter;
-    mapping (uint => address) private _authors;
-
-    Counters.Counter private _collectionIdCounter;
-    mapping (uint => address) private _collections;
+    EnumerableSet.AddressSet private _authors;
+    EnumerableSet.AddressSet private _collections;
     
     constructor (address _paymentCurrency) {
         paymentCurrency = _paymentCurrency;
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
-    function item (uint id) public view returns (Item memory) {
+    /// View functions
+
+    /**
+     * @notice Item info.
+     *
+     * @param id Item id.
+     */
+
+    function item (uint id) external view returns (Item memory) {
        return _items[id];
     }
 
-    function items () public view returns (uint[] memory) {
+    /**
+     * @notice All listed items.
+     */
+
+    function items () external view returns (uint[] memory) {
         uint[] memory _result = new uint[](_itemIdCounter.current());
 
         for (uint i = 0; i < _result.length; i++)
@@ -63,16 +126,26 @@ contract BaliTwinMarket is ERC721Holder, ERC1155Holder, AccessControl {
         return _result;
     }
 
+    /**
+     * @notice All listed items which available for purchase.
+     */
+
     function itemsAvailable () public view returns (uint[] memory) {
        return itemsOfOwner(address(this));
     }
+
+    /**
+     * @notice All purchased items by provided address.
+     *
+     * @param owner Owner address.
+     */
 
     function itemsOfOwner (address owner) public view returns (uint[] memory) {
         uint _counter = 0;
 
         for (uint i = 0; i < _itemIdCounter.current(); i++)
             if (
-                Collection(_items[i].collection).balanceOf(owner, _items[i].id) > 0
+                Collection1155(_items[i].collection).balanceOf(owner, _items[i].id) > 0
             ) _counter++;
 
         uint[] memory _result = new uint[](_counter);
@@ -80,7 +153,7 @@ contract BaliTwinMarket is ERC721Holder, ERC1155Holder, AccessControl {
 
         for (uint i = 0; i < _itemIdCounter.current(); i++)
             if (
-                Collection(_items[i].collection).balanceOf(owner, _items[i].id) > 0
+                Collection1155(_items[i].collection).balanceOf(owner, _items[i].id) > 0
             ) { 
                 _result[_counter] = i;
                 _counter++;
@@ -88,6 +161,12 @@ contract BaliTwinMarket is ERC721Holder, ERC1155Holder, AccessControl {
 
         return _result;
     }
+
+    /**
+     * @notice All listed items by provided collection address.
+     *
+     * @param collection Collection address.
+     */
 
     function itemsByCollection (address collection) external view returns (Item[] memory) {
         uint _counter = 0;
@@ -108,6 +187,12 @@ contract BaliTwinMarket is ERC721Holder, ERC1155Holder, AccessControl {
         return _result;
     }
 
+    /**
+     * @notice All listed items by provided author address.
+     *
+     * @param author Authir address.
+     */
+
     function itemsByAuthor (address author) external view returns (Item[] memory) {
         uint _counter = 0;
 
@@ -127,54 +212,139 @@ contract BaliTwinMarket is ERC721Holder, ERC1155Holder, AccessControl {
         return _result;
     }
 
+    /**
+     * @notice All listed collections.
+     */
+
     function collections () external view returns (address[] memory) {
-        address[] memory _result = new address[](_collectionIdCounter.current());
-
-        for (uint i = 0; i < _result.length; i++)
-            _result[i] = _collections[i];
-
-        return _result;
+        return EnumerableSet.values(_collections);
     }
+
+    /**
+     * @notice All listed authors.
+     */
 
     function authors () external view returns (address[] memory) {
-        address[] memory _result = new address[](_authorIdCounter.current());
-
-        for (uint i = 0; i < _result.length; i++)
-            _result[i] = _authors[i];
-
-        return _result;
+        return EnumerableSet.values(_authors);
     }
+
+    /// Actions
+
+    /**
+     * @notice Buy item.
+     *
+     * @param id Item id.
+     */
 
     function buy (uint id, uint amount) external {
+        Collection1155 collection = Collection1155(_items[id].collection);
+
+        require(amount > 0, 'Amount should be greater than 0');
+        require(
+            amount <= collection.balanceOf(address(this), _items[id].id),
+            'Not enough available tokens'
+        );
+
+        uint _fee = _items[id].price * amount / 100 * listingFee;
+
         ERC20 currency = ERC20(paymentCurrency);
-        currency.transferFrom(msg.sender, address(this), _items[id].price * amount);
+        currency.transferFrom(msg.sender, address(this), _fee);
+        currency.transferFrom(msg.sender, _items[id].seller, _items[id].price * amount - _fee);
 
-        Collection(_items[id].collection).safeTransferFrom(
+        collection.safeTransferFrom(
             address(this), msg.sender, _items[id].id, amount, new bytes(0)
         );
+
+        emit Purchased(id);
     }
 
-    function unlist (uint id, uint amount) external {
-        require(_items[id].seller != address(0), "Item with provided id is not exists");
-        require(_items[id].seller == msg.sender, "You can't unlist item, because you are not seller");
+    /**
+     * @notice Unlit item. See _unlist().
+     *
+     * @param id Item id.
+     */
 
-        Collection(_items[id].collection).safeTransferFrom(
-            address(this), msg.sender, _items[id].id, amount, new bytes(0)
-        );
+    function unlist (uint id) onlySeller(id) external {
+        _unlist(id);
     }
 
-    function withdraw () onlyRole(DEFAULT_ADMIN_ROLE) external {
+    // Admin functions
+    
+    /**
+     * @notice Set minimal price.
+     *
+     * @param value New minimal price.
+     */
+
+    function setMinPrice (uint value) onlyRole(DEFAULT_ADMIN_ROLE) external {
+        require(value > 0, 'Minimal price cannot be 0');
+
+        minPrice = value;
+        emit MinPriceChanged(value);
+    }
+
+    /**
+     * @notice Set listing fee.
+     *
+     * @param value New listing fee percent.
+     */
+
+    function setListingFee (uint value) onlyRole(DEFAULT_ADMIN_ROLE) external {
+        require(value < 100, 'Fee cannot be greater than 99%');
+
+        listingFee = value;
+        emit ListingFeeChanged(value);
+    }
+
+    /**
+     * @notice Set minimal price.
+     * @dev Withdraws all previous currency before changing.
+     *
+     * @param value New Payment currenct address.
+     */
+
+    function setPaymentCurrency (address value) onlyRole(DEFAULT_ADMIN_ROLE) external {
+        withdraw();
+        paymentCurrency = value;
+        emit PaymentCurrencyChanged(value);
+    }
+
+    /**
+     * @notice Withdraw all payment currency to contract owner address.
+     */
+     
+    function withdraw () onlyRole(DEFAULT_ADMIN_ROLE) public {
         ERC20 currency = ERC20(paymentCurrency);
         currency.transfer(msg.sender, currency.balanceOf(address(this)));
     }
 
+    /**
+     * @notice Destroys current contract, calls withdraw and transfer all items to theirs owners.
+     */
+
+    function destroy () onlyRole(DEFAULT_ADMIN_ROLE) external {
+        uint[] memory _available = itemsAvailable();
+        for (uint i = 0; i < _available.length; i++)
+            _unlist(_available[i]);
+
+        withdraw();
+        selfdestruct(payable(msg.sender));
+    }
+
     // Private
 
+    /**
+     * @dev For list items you must just transfer it to this contract and provide Invoice struct as data.
+     *
+     * @param collection Collection address.
+     * @param seller Seller address.
+     * @param id Token id.
+     * @param data Invoice bytes. See struct Invoice.
+     */
+
     function _listItem (
-        address collection, address seller, uint id, uint amount, bytes memory data
+        address collection, address seller, uint id, bytes memory data
     ) private onlyRole(VERIFIED_COLLECTION) returns (uint) {
-        require(amount > 0, "Amount must be grater than 0");
-        
         // Check if item already listed
         for (uint i = 0; i < _itemIdCounter.current(); i++) 
             if (_items[i].id == id && _items[i].collection == collection) 
@@ -182,67 +352,65 @@ contract BaliTwinMarket is ERC721Holder, ERC1155Holder, AccessControl {
 
         // Invoice validation
         Invoice memory invoice = abi.decode(data, (Invoice));
-        require(invoice.price > minPrice, "Price must be greater than minimal price");
+        require(minPrice <= invoice.price, 'Price must be greater than minimal price');
 
-        address _author = Collection(collection).authorOf(id);
-        _listAuthor(_author);
-        _listCollection(collection);
+        address author = Collection1155(collection).authorOf(id);
+        EnumerableSet.add(_authors, author);
+        EnumerableSet.add(_collections, collection);
 
         uint _itemId = _itemIdCounter.current();
         _itemIdCounter.increment();
         
         _items[_itemId] = Item(
-            id, collection, _author, invoice.price, seller
+            id, collection, author, invoice.price, seller
         );
 
-        emit List(_itemId);
+        emit Listed(_itemId);
         return _itemId;
     }
 
-    function _listAuthor (address author) private returns (uint) {
-        for (uint i = 0; i < _authorIdCounter.current(); i++)
-            if (_authors[i] == author) return i;
-        
-        _authors[_authorIdCounter.current()] = author;
-        _authorIdCounter.increment();
+    /**
+     * @notice Unlist item.
+     * @dev Transfers items back to seller and deletes from list
+     */
+    function _unlist (uint id) private {
+        Collection1155 collection = Collection1155(_items[id].collection);
 
-        return _authorIdCounter.current();
-    }
+        Collection1155(_items[id].collection).safeTransferFrom(
+            address(this), 
+            _items[id].seller, 
+            _items[id].id, 
+            collection.balanceOf(address(this), _items[id].id),
+            new bytes(0)
+        );
 
-    function _listCollection (address collection) private returns (uint) {
-        for (uint i = 0; i < _collectionIdCounter.current(); i++)
-            if (_collections[i] == collection) return i;
-        
-        _collections[_collectionIdCounter.current()] = collection;
-        _collectionIdCounter.increment();
-
-        return _collectionIdCounter.current();
+        delete _items[id];
+        emit Unlisted(id);
     }
 
     // Overrides
-
-    function onERC721Received (
-        address operator, address from, uint id, bytes memory _data
-    ) public override virtual returns (bytes4) {
-        _listItem(msg.sender, operator, id, 1, _data);
-        return this.onERC721Received.selector;
-    }
     
+    /**
+     * @notice See _listItem()
+     */
     function onERC1155Received (
         address operator, address from, uint id, uint amount, bytes memory _data
     ) public override virtual returns (bytes4) {
-        _listItem(msg.sender, operator, id, amount, _data);
+        _listItem(msg.sender, operator, id, _data);
        return this.onERC1155Received.selector;
     }
 
+    /**
+     * @notice See _listItem()
+     */
     function onERC1155BatchReceived (
         address operator, address from, uint[] memory ids, uint[] memory amounts, bytes memory data
     ) public override virtual returns (bytes4) {
         bytes[] memory _data = abi.decode(data, (bytes[]));
-        require(_data.length == ids.length, "ids and data length mismatch");
+        require(_data.length == ids.length, 'ids and data length mismatch');
 
         for (uint i = 0; i < ids.length; i++) {
-            _listItem(msg.sender, operator, ids[i], amounts[i], _data[i]);
+            _listItem(msg.sender, operator, ids[i], _data[i]);
         }
         
         return this.onERC1155BatchReceived.selector;

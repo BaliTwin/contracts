@@ -11,13 +11,14 @@ export const SYMBOL_1155 = 'ITEM1155'
 export const META_URI = 'ipfs://QmfPEreRexqckoExqHv1hGU5xirKjqAKW3cpmFpy1AgjBe'
 
 export const nullData = AbiCoder.encode(['uint'], [0])
-export const randomPrice = () => BigInt((Math.random() * 100 >> 0) * 10 ** 6)
+export const randomPrice = () => (Math.random() * 100 >> 0 || 1) * 10 ** 6
+export const randomInt = () => Math.random() * 10 >> 0
 export const ipfsCID = () => 
 	hexlify(keccak256(toUtf8Bytes(String(Math.random()))))
 
 export const accessError = (role, caller) => `AccessControl: account ${caller.toLowerCase()} is missing role ${role}`
 
-export function invoice (price : bigint | number = randomPrice()) {
+export function invoice (price = randomPrice()) {
 	return AbiCoder.encode(
 		['uint'], [BigInt(price)]
 	)
@@ -45,7 +46,7 @@ export async function usdt () {
 }
 
 export async function contracts () {
-	const { wallets, USDT } = await usdt()
+	const { USDT } = await usdt()
 
 	const [Market, Collection721, Collection1155] = await Promise.all(
 		[
@@ -56,8 +57,8 @@ export async function contracts () {
 			([name, ...args]) => loadFixture(() => deploy(name, ...args))
 		)
 	)
-		
-	return { wallets, Market, Collection721, Collection1155, USDT }
+
+	return { Market, Collection721, Collection1155, USDT }
 }
 
 export async function list721 ({ author, seller, Market } : any) {
@@ -135,19 +136,19 @@ export async function listBatch1155 ({ author, seller, Market } : any) {
 }
 
 export async function listAndBuyBatch1155 () {
-	const { USDT, wallets, Market } = await contracts()
+	const { USDT, Market } = await contracts()
 			
 	const { Collection1155 } = await listBatch1155({ Market })
 	const [id] = await Market.items()
 	const item = await Market.item(id)
 	const amount = await Collection1155.balanceOf(Market.address, item.id)
 
-	const buyer = wallets[1]
+	const [buyer] = await ethers.getSigners()
 
 	await USDT.connect(buyer).approve(Market.address, item.price * amount)
 	await Market.connect(buyer).buy(id, amount)
 
 	return {
-		Collection1155, USDT, Market, wallets, item, buyer
+		Collection1155, USDT, Market, item, buyer
 	}
 }
