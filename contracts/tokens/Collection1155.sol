@@ -201,6 +201,7 @@ contract Collection1155 is ERC1155, ERC1155Supply, ERC1155Burnable, AccessContro
      */
 
     function uri (uint id) override public view returns (string memory) {
+        require(exists(id), 'Token with provided id is not exists');
         return string(abi.encodePacked(super.uri(id), _uint2hex(id)));
     }
 

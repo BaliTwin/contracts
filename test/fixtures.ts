@@ -24,6 +24,8 @@ export function invoice (price = randomPrice()) {
 	)
 }
 
+//console.log('asdfads', invoice(.15 * 10 ** 18))
+
 export async function deploy (name : string, ...args) {
 	const contract = await ethers
 		.getContractFactory(name)

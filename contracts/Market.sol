@@ -48,7 +48,7 @@ contract BaliTwinMarket is ERC1155Holder, AccessControl {
      * @dev Percentage value. 0% - 99%
      */
 
-    uint public listingFee = 0;
+    uint public listingFee = 1;
 
     /**
      * @dev Minimal price should be depended on Payment currency decimals.
@@ -86,7 +86,7 @@ contract BaliTwinMarket is ERC1155Holder, AccessControl {
     event PaymentCurrencyChanged (address value);
 
     modifier onlySeller (uint id) {
-        require(_items[id].seller == msg.sender, 'You cannot unlist item, because you are not seller');
+        require(_items[id].seller == msg.sender, 'Method available only for seller');
         _;
     }
     
@@ -168,19 +168,19 @@ contract BaliTwinMarket is ERC1155Holder, AccessControl {
      * @param collection Collection address.
      */
 
-    function itemsByCollection (address collection) external view returns (Item[] memory) {
+    function itemsByCollection (address collection) external view returns (uint[] memory) {
         uint _counter = 0;
 
         for (uint i = 0; i < _itemIdCounter.current(); i++)
             if (_items[i].collection == collection)
                 _counter++;
 
-        Item[] memory _result = new Item[](_counter);
+        uint[] memory _result = new uint[](_counter);
         _counter = 0;
 
         for (uint i = 0; i < _itemIdCounter.current(); i++)
             if (_items[i].collection == collection) {
-                _result[_counter] = _items[i];
+                _result[_counter] = i;
                 _counter++;
             }
 
@@ -190,22 +190,22 @@ contract BaliTwinMarket is ERC1155Holder, AccessControl {
     /**
      * @notice All listed items by provided author address.
      *
-     * @param author Authir address.
+     * @param author Author address.
      */
 
-    function itemsByAuthor (address author) external view returns (Item[] memory) {
+    function itemsByAuthor (address author) external view returns (uint[] memory) {
         uint _counter = 0;
 
         for (uint i = 0; i < _itemIdCounter.current(); i++)
             if (_items[i].author == author)
                 _counter++;
 
-        Item[] memory _result = new Item[](_counter);
+        uint[] memory _result = new uint[](_counter);
         _counter = 0;
 
         for (uint i = 0; i < _itemIdCounter.current(); i++)
-            if (_items[i].collection == author) {
-                _result[_counter] = _items[i];
+            if (_items[i].author == author) {
+                _result[_counter] = i;
                 _counter++;
             }
 
@@ -259,13 +259,30 @@ contract BaliTwinMarket is ERC1155Holder, AccessControl {
     }
 
     /**
-     * @notice Unlit item. See _unlist().
+     * @notice Unlist item. See _unlist().
      *
      * @param id Item id.
      */
 
     function unlist (uint id) onlySeller(id) external {
         _unlist(id);
+    }
+
+    /**
+     * @notice Change price of listed item.
+     *
+     * @param id Item id.
+     * @param price New price.
+     */
+
+    function setItemPrice (uint id, uint price) onlySeller(id) external {
+        require(
+            Collection1155(_items[id].collection).balanceOf(address(this), _items[id].id) > 0,
+            'Item is not listed.'
+        );
+        require(minPrice <= price, 'Price must be greater than minimal price');
+
+        _items[id].price = price;
     }
 
     // Admin functions
@@ -384,7 +401,6 @@ contract BaliTwinMarket is ERC1155Holder, AccessControl {
             new bytes(0)
         );
 
-        delete _items[id];
         emit Unlisted(id);
     }
 
@@ -394,7 +410,7 @@ contract BaliTwinMarket is ERC1155Holder, AccessControl {
      * @notice See _listItem()
      */
     function onERC1155Received (
-        address operator, address from, uint id, uint amount, bytes memory _data
+        address operator, address, uint id, uint, bytes memory _data
     ) public override virtual returns (bytes4) {
         _listItem(msg.sender, operator, id, _data);
        return this.onERC1155Received.selector;
@@ -404,7 +420,7 @@ contract BaliTwinMarket is ERC1155Holder, AccessControl {
      * @notice See _listItem()
      */
     function onERC1155BatchReceived (
-        address operator, address from, uint[] memory ids, uint[] memory amounts, bytes memory data
+        address operator, address, uint[] memory ids, uint[] memory, bytes memory data
     ) public override virtual returns (bytes4) {
         bytes[] memory _data = abi.decode(data, (bytes[]));
         require(_data.length == ids.length, 'ids and data length mismatch');

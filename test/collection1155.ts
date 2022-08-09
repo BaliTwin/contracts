@@ -136,6 +136,10 @@ describe('Collection1155', () => {
 
 			await Collection1155.grantRole(await Collection1155.AUTHOR_ROLE(), signer.address)
 			await Collection1155.mint(signer.address, id, 1, nullData).then(tx => tx.wait())
+
+			await expect(Collection1155.uri(await ipfsCID())).rejectedWith(
+				'Token with provided id is not exists'
+			)
 			
 			const uri = await Collection1155.uri(id)
 			expect(uri).to.equal(`ipfs://f0${id.slice(2).toUpperCase()}`)
