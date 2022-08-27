@@ -36,6 +36,7 @@ import './tokens/Collection1155.sol';
 /// @notice Contract for list and sale ERC1155 tokens.
 
 /// @custom:version 0.1.0
+/// @custom:website balitwin.com
 /// @custom:security-contact security@balitwin.com
 
 contract BaliTwinMarket is ERC1155Holder, AccessControl {
@@ -237,9 +238,10 @@ contract BaliTwinMarket is ERC1155Holder, AccessControl {
      */
 
     function buy (uint id, uint amount) external {
-        Collection1155 collection = Collection1155(_items[id].collection);
-
         require(amount > 0, 'Amount should be greater than 0');
+        require(_items[id].collection != address(0), 'Item with provided id is not exists.');
+
+        Collection1155 collection = Collection1155(_items[id].collection);
         require(
             amount <= collection.balanceOf(address(this), _items[id].id),
             'Not enough available tokens'

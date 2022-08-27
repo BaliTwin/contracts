@@ -35,6 +35,7 @@ import '@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Burnable.sol';
  * @author BaliTwin Developers.
  *
  * @custom:version 0.1.0
+ * @custom:website balitwin.com
  * @custom:security-contact security@balitwin.com
  */
 
