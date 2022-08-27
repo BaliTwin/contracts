@@ -165,6 +165,17 @@ describe('Market', () => {
 			}
 		})
 
+		it('Change price of listed item', async () => {
+			const [, author] = await ethers.getSigners()
+			const { Market } = await list1155({ author })
+			const oldPrice = (await Market.item(0)).price
+			const newPrice = oldPrice / 2 >> 0
+
+			await Market.connect(author).setItemPrice(0, newPrice)
+
+			expect((await Market.item(0)).price).equals(newPrice)
+		})
+
 		it('Unlist', async () => {
 			const { Market, author, Collection1155, id } = await list1155({})
 			const [itemId] = await Market.items()
