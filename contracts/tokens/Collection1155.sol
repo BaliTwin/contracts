@@ -70,6 +70,7 @@ contract Collection1155 is ERC1155, ERC1155Supply, ERC1155Burnable, AccessContro
         symbol = _symbol;
         _contractURI = _contractMetaURI;
 
+        _grantRole(AUTHOR_ROLE, msg.sender);
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
