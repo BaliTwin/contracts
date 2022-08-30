@@ -27,12 +27,12 @@ describe('Collection1155', () => {
 	describe('Minting', () => {
 		it('mint(): Mint only for granted author', async () => {
 			const { Collection1155 } = await contracts() 
-			const [author, user] = await ethers.getSigners()
+			const [, user] = await ethers.getSigners()
 			
 			await expect(
-				Collection1155.mint(user.address, ipfsCID(), 1, nullData)
+				Collection1155.connect(user).mint(user.address, ipfsCID(), 1, nullData)
 			).to.revertedWith(
-				accessError(await Collection1155.AUTHOR_ROLE(), author.address)
+				accessError(await Collection1155.AUTHOR_ROLE(), user.address)
 			)
 		})
 				
