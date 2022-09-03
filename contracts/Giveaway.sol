@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 
-
 /**
  *
  *                  @@@@@@@@@@@@@@@@@*.         #@@@@#-         %@@%.             @@@%      
@@ -83,6 +82,28 @@ contract BaliTwinGiveaway is Ownable {
      */
     function getGiveaway (uint id) public view isExists(id) returns (Giveaway memory) {
         return giveaways[id];
+    }
+
+    /**
+     * @notice Get tokens claimed by user
+     * 
+     * @param user The user address
+     */
+
+    function getClaimed (address user) public view returns (uint[] memory) {
+        uint[] memory claimedTokens = new uint[](giveawayIdCounter.current());
+        uint counter = 0;
+
+        for (uint i = 0; i < claimedTokens.length; i++)
+            if (claimed[user][i]) {
+                claimedTokens[counter] = i;
+                counter++;
+            }
+        
+        uint[] memory result = new uint[](counter);
+        for (uint i = 0; i < counter; i++) result[i] = claimedTokens[i];
+
+        return result;
     }
 
     // Public functions
