@@ -23,8 +23,9 @@
 
 pragma solidity ^0.8.15;
 
-import "./tokens/Collection1155.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import './tokens/Collection1155.sol';
+import '@openzeppelin/contracts/utils/Counters.sol';
+import '@openzeppelin/contracts/access/Ownable.sol';
 
 /// @title Giveaway
 /// @author BaliTwin Developers
@@ -35,6 +36,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 /// @custom:security-contact security@balitwin.com
 
 contract BaliTwinGiveaway is Ownable {
+    using Counters for Counters.Counter;
     
     /**
      * @notice Giveaway struct
@@ -53,49 +55,68 @@ contract BaliTwinGiveaway is Ownable {
     }
     
     /// @dev Mapping of giveaway id to giveaway
-    uint private giveawaysCounter = 0;
+    Counters.Counter private giveawayIdCounter;
     mapping (uint => Giveaway) private giveaways;
 
     /// @dev Mapping from user address to giveaway id to claim status
     mapping (address => mapping (uint => bool)) private claimed;
-    
-    event Claimed(address indexed claimer, uint indexed tokenId, address collection);
 
+    /// @notice Checks if giveaway is exists
+    modifier isExists (uint _id) {
+        require(giveaways[_id].collection != address(0), 'Giveaway does not exist');
+        _;
+    }
+
+    /// @notice Checks if giveaway is not over
+    modifier isActive (uint id) {
+        require(giveaways[id].claimed < giveaways[id].total, 'Giveaway is over');
+        _;
+    }
+
+    event Claimed (address indexed claimer, uint indexed tokenId, address collection);
+
+    // View functions
 
     /**
      * @notice Get giveaway by id
-     * 
      * @param id The giveaway id
      */
-    function getGiveaway(uint id) public view returns (Giveaway memory) {
-        require(id < giveawaysCounter, "Giveaway does not exist");
+    function getGiveaway (uint id) public view isExists(id) returns (Giveaway memory) {
         return giveaways[id];
     }
 
+    // Public functions
+
     /**
      * @notice Claim a token from a giveaway
-     * @param giveawayId The giveaway id
+     * @param id The giveaway id
      * 
      * @dev The giveaway must exist and the user must not have claimed the token yet
      */
 
-    function claim (uint giveawayId) external {
-        require(giveawayId < giveawaysCounter, "BaliTwinGiveaway: giveaway does not exist");
-        require(!claimed[msg.sender][giveawayId], "BaliTwinGiveaway: giveaway already claimed");
-
-        Giveaway memory giveaway = giveaways[giveawayId];
-        Collection1155 collection = Collection1155(giveaway.collection);
-
-        require(giveaway.claimed < giveaway.total, "BaliTwinGiveaway: giveaway already finished");
-        collection.mint(msg.sender, giveaway.id, 1, new bytes(0));
-
-        giveaways[giveawayId].claimed++;
-        claimed[msg.sender][giveawayId] = true;
-
-        emit Claimed(msg.sender, giveaway.id, giveaway.collection);
+    function claim (uint id) external isExists(id) isActive(id) {
+        _claim(msg.sender, id);
     }
 
     // Admin functions
+
+     /**
+     * @notice Airdrops tokens to a list of users
+     * 
+     * @param addresses The list of users
+     * @param id The giveaway id
+     */
+
+    function airdrop (address[] calldata addresses, uint id) external onlyOwner isExists(id) {
+        require(addresses.length > 0, 'addresses is empty');
+        require(
+            addresses.length <= giveaways[id].total - giveaways[id].claimed, 
+            'addresses length is greater than giveaway total'
+        );
+
+        for (uint i = 0; i < addresses.length; i++) 
+            _claim(addresses[i], id);
+    }
 
     /**
      * @notice Creates a new giveaway
@@ -105,35 +126,47 @@ contract BaliTwinGiveaway is Ownable {
      * @param total The total amount of tokens to giveaway
      */
 
-    function createGiveaway(address collection, uint id, uint total) external onlyOwner {
-        require(total > 0, "BaliTwinGiveaway: total must be greater than 0");
+    function createGiveaway (address collection, uint id, uint total) external onlyOwner returns (uint) {
+        require(total > 0, 'BaliTwinGiveaway: total must be greater than 0');
 
-        giveaways[giveawaysCounter] = Giveaway(collection, id, total, 0);
-        giveawaysCounter++;
+        uint _giveawayId = giveawayIdCounter.current();
+        giveawayIdCounter.increment();
+
+        giveaways[_giveawayId] = Giveaway(collection, id, total, 0);
+        return _giveawayId;
     }
 
     /**
-     * @notice Airdrops tokens to a list of users
+     * @notice Change giveaway total
      * 
-     * @param users The list of users
-     * @param giveawayId The giveaway id
+     * @param id The giveaway id
+     * @param total The new total
      */
 
-    function airdrop(address[] calldata users, uint giveawayId) external onlyOwner {
-        require(giveawayId < giveawaysCounter, "BaliTwinGiveaway: giveaway does not exist");
+    function changeGiveawayTotal (uint id, uint total) external onlyOwner isExists(id) {
+        require(total > giveaways[id].claimed, 'BaliTwinGiveaway: giveaway total must be greater than claimed');
 
-        Giveaway memory giveaway = giveaways[giveawayId];
-        Collection1155 collection = Collection1155(giveaway.collection);
+        giveaways[id].total = total;
+    }
 
-        require(giveaway.claimed + users.length <= giveaway.total, "BaliTwinGiveaway: giveaway already finished");
+    // Private functions
 
-        for (uint i = 0; i < users.length; i++) {
-            collection.mint(users[i], giveaway.id, 1, new bytes(0));
-            claimed[users[i]][giveawayId] = true;
+    /**
+     * @notice Claim a token from a giveaway
+     * 
+     * @param claimer The user address
+     * @param id The giveaway id
+     */
 
-            emit Claimed(users[i], giveaway.id, giveaway.collection);
-        }
+    function _claim (address claimer, uint id) private {
+        require(!claimed[claimer][id], 'Already claimed');
 
-        giveaways[giveawayId].claimed += users.length;
+        Collection1155 collection = Collection1155(giveaways[id].collection);
+        collection.mint(claimer, giveaways[id].id, 1, new bytes(0));
+
+        giveaways[id].claimed++;
+        claimed[claimer][id] = true;
+
+        emit Claimed(claimer, giveaways[id].id, giveaways[id].collection);
     }
 }
