@@ -18,6 +18,8 @@ export const ipfsCID = () =>
 
 export const accessError = (role, caller) => `AccessControl: account ${caller.toLowerCase()} is missing role ${role}`
 
+console.log(invoice(0))
+
 export function invoice (price = randomPrice()) {
 	return AbiCoder.encode(
 		['uint'], [BigInt(price)]

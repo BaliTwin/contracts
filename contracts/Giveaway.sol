@@ -1,93 +1,139 @@
 // SPDX-License-Identifier: MIT
+
+
+/**
+ *
+ *                  @@@@@@@@@@@@@@@@@*.         #@@@@#-         %@@%.             @@@%      
+ *                  @@@@=---------=@@@@.      .%@@+@@@@*        %@@@:             @@@@.     
+ *                  @@@@=---------=@@@@.     -@@%: .%@@@%.      %@@@:             @@@@.     
+ *                  @@@@%%%%%%%%%%@@@@%:    +@@#     #@@@@:     %@@@:             @@@@.     
+ *                  @@@@.          -@@@%   #@@+       +@@@@=    %@@@:             @@@@.     
+ *                  @@@@+++++++++++%@@@+ .%@@-    =****%@@@@*   %@@@#**********=  @@@@.     
+ *                  %%%%%%%%%%%%%%%%#+: :#%#:    +%%%%%%%%%%%*  *%%%%%%%%%%%%%#:  =#%%.     
+ *
+ *          ==================:  ====:  :============:    .===  ===-    ======:          .==
+ *          *@@@@@@@@@@@@@@@@@@= -@@@@*  =@@@@@@@@@@+    -@@%:  %@@@:  .@@@@@@@%-        %@@
+ *                  @@@@.         .%@@@%. :@@@@*        +@@#    %@@@:  .@@%:#@@@@%-      %@@
+ *                  @@@@.           *@@@@- .%@@@%.     #@@+     %@@@:  .@@%  :#@@@@%-    %@@
+ *                  @@@@.            =@@@@+  *@@@@-  .%@@-      %@@@:  .@@%    :#@@@@#:  %@@
+ *                  @@@@.             -@@@@*  =@@@@+-@@%:       %@@@:  .@@%      :#@@@@#:%@@
+ *                  @@@@.              .%@@@%. -@@@@@@#         #@@@:   @@%        :#@@@@@@@
+ *
+ */
+
 pragma solidity ^0.8.15;
 
 import "./tokens/Collection1155.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-/// @title BaliTwinGiveaway.
-/// @author BaliTwin Developers.
-/// @notice Giveaway contract.
+/// @title Giveaway
+/// @author BaliTwin Developers
+/// @notice This contract is used to distribute NFTs to users
 
 /// @custom:version 1.0.0
 /// @custom:website https://balitwin.com
 /// @custom:security-contact security@balitwin.com
 
 contract BaliTwinGiveaway is Ownable {
-	/// @notice total amount of tokens to mint.
-    uint public total;
+    
+    /**
+     * @notice Giveaway struct
+     * 
+     * @param collection Address of the collection
+     * @param id The token id
+     * @param total Total amount of tokens to be distributed
+     * @param claimed Amount of tokens claimed
+     */
 
-	/// @notice End date.
-    uint public endDate;
+    struct Giveaway {
+        address collection;
+        uint id;
+        uint total;
+        uint claimed;
+    }
+    
+    /// @dev Mapping of giveaway id to giveaway
+    uint private giveawaysCounter = 0;
+    mapping (uint => Giveaway) private giveaways;
 
-	/**
-	 * @notice Collection address.
-	 * @dev ERC1155
-	 */
-    address private collection;
+    /// @dev Mapping from user address to giveaway id to claim status
+    mapping (address => mapping (uint => bool)) private claimed;
+    
+    event Claimed(address indexed claimer, uint indexed tokenId, address collection);
 
-	/// @notice token ID.
-    uint private tokenId;
 
-	/// @notice amount of claimed event-passes.
-    uint public claimed = 0;
-    mapping (uint => address) private claimers;
-
-	/// @notice Checks that Giveaway is still active.
-    modifier isActive {
-        require(claimed < total, "Sorry. All tokens was claimed.");
-        require(block.timestamp < endDate, "Claim event is finished.");
-        _;
+    /**
+     * @notice Get giveaway by id
+     * 
+     * @param id The giveaway id
+     */
+    function getGiveaway(uint id) public view returns (Giveaway memory) {
+        require(id < giveawaysCounter, "Giveaway does not exist");
+        return giveaways[id];
     }
 
-	/// @notice Checks that user claimed only one token.
-    modifier once {
-        for (uint i = 0; i <= claimed; i++)
-            if (claimers[i] == msg.sender) 
-                revert("Address already has claimed tokens");
-        _;
-    }
+    /**
+     * @notice Claim a token from a giveaway
+     * @param giveawayId The giveaway id
+     * 
+     * @dev The giveaway must exist and the user must not have claimed the token yet
+     */
 
-    constructor (address tokenAddress, uint tokenId_, uint total_, uint endDate_) {
-        total = total_;
-        tokenId = tokenId_;
-        endDate = endDate_;
-        collection = tokenAddress;
-    }
+    function claim (uint giveawayId) external {
+        require(giveawayId < giveawaysCounter, "BaliTwinGiveaway: giveaway does not exist");
+        require(!claimed[msg.sender][giveawayId], "BaliTwinGiveaway: giveaway already claimed");
 
-	/**
-	 * @notice Transfers single one token to user who calls this method.
-	 */
+        Giveaway memory giveaway = giveaways[giveawayId];
+        Collection1155 collection = Collection1155(giveaway.collection);
 
-    function claim () external once isActive {
-        Collection1155(collection).mint(msg.sender, tokenId, 1, new bytes(0));
+        require(giveaway.claimed < giveaway.total, "BaliTwinGiveaway: giveaway already finished");
+        collection.mint(msg.sender, giveaway.id, 1, new bytes(0));
 
-        claimers[claimed] = msg.sender;
-        claimed++;
+        giveaways[giveawayId].claimed++;
+        claimed[msg.sender][giveawayId] = true;
+
+        emit Claimed(msg.sender, giveaway.id, giveaway.collection);
     }
 
     // Admin functions
 
-	/**
-	 * @notice Extend amount of total.
-	 * 
-	 * @param value Additional amount value.
-	 * @dev only for owner.
-	 */
+    /**
+     * @notice Creates a new giveaway
+     * 
+     * @param collection The collection address
+     * @param id The token id
+     * @param total The total amount of tokens to giveaway
+     */
 
-    function extendTotal (uint value) external onlyOwner {
-        total += value;
+    function createGiveaway(address collection, uint id, uint total) external onlyOwner {
+        require(total > 0, "BaliTwinGiveaway: total must be greater than 0");
+
+        giveaways[giveawaysCounter] = Giveaway(collection, id, total, 0);
+        giveawaysCounter++;
     }
 
-	/**
-	 * @notice Set new date of end.
-	 * 
-	 * @param value New end date.
-	 * @dev New end date must be greater than previous one.
-	 */
+    /**
+     * @notice Airdrops tokens to a list of users
+     * 
+     * @param users The list of users
+     * @param giveawayId The giveaway id
+     */
 
-    function extendEndDate (uint value) external onlyOwner {
-        require(value > endDate, "New end date must be in greater than previous.");
-        endDate = value;
+    function airdrop(address[] calldata users, uint giveawayId) external onlyOwner {
+        require(giveawayId < giveawaysCounter, "BaliTwinGiveaway: giveaway does not exist");
+
+        Giveaway memory giveaway = giveaways[giveawayId];
+        Collection1155 collection = Collection1155(giveaway.collection);
+
+        require(giveaway.claimed + users.length <= giveaway.total, "BaliTwinGiveaway: giveaway already finished");
+
+        for (uint i = 0; i < users.length; i++) {
+            collection.mint(users[i], giveaway.id, 1, new bytes(0));
+            claimed[users[i]][giveawayId] = true;
+
+            emit Claimed(users[i], giveaway.id, giveaway.collection);
+        }
+
+        giveaways[giveawayId].claimed += users.length;
     }
-    
 }
