@@ -33,15 +33,16 @@ contract Collection721 is ERC721, ERC721URIStorage, ERC721Enumerable, ERC721Burn
         return _contractURI;
     }
 
-    function mint (address to, string memory uri, bytes memory data) external onlyRole(AUTHOR_ROLE) returns (uint) {
-        require(!_tokenURIExists(uri), "Provided URI already minted");
+    function mint (address to, uint uri, bytes memory data) external onlyRole(AUTHOR_ROLE) returns (uint) {
+        string memory _uri = string(abi.encodePacked(uri));
+        require(!_tokenURIExists(_uri), "Provided URI already minted");
 
         uint id = _tokenIdCounter.current();
         _tokenIdCounter.increment();
 
         _authorship[id] = msg.sender;
         _safeMint(to, id, data);
-        _setTokenURI(id, uri);
+        _setTokenURI(id, _uri);
 
         return id;
     }
